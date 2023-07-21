@@ -22,11 +22,21 @@
 #include <scsi/scsi_eh.h>
 #include <scsi/scsi_host.h>
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) 
+#ifdef REDHAT
+#define PATCH_MINOR_VER 14
+#else
+#define PATCH_MINOR_VER 15
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, PATCH_MINOR_VER,0) 
 #include <linux/backing-dev-defs.h>
-// #include <linux/genhd.h>
-#define queue_to_disk_seh(q)    (dev_to_disk(kobj_to_dev((q)->kobj.parent)))
-#define queue_has_disk_seh(q)   ((q)->kobj.parent != NULL)
+#if __has_include(<linux/genhd.h>)
+#include <linux/genhd.h>
+#endif
+//#define queue_to_disk_seh(q)    (dev_to_disk(kobj_to_dev((q)->kobj.parent)))
+//#define queue_has_disk_seh(q)   ((q)->kobj.parent != NULL)
+#define queue_to_disk_seh(q)    (dev_to_disk(kobj_to_dev((q)->mq_kobj)))
+#define queue_has_disk_seh(q)   ((q)->mq_kobj != NULL)
 #endif
 
 #define BUFFER_SECTOR 2048
@@ -56,10 +66,11 @@ int seh_vusb_try_set_buffers(struct usb_device *udev){
                 struct us_data *us  = usb_get_intfdata(ifc);
                 if (!us)
                     continue;
+                ret = 1;
                 scsi_host = container_of((void *) us, struct Scsi_Host, hostdata);
                 shost_for_each_device(sdev, scsi_host) {
                     if (sdev){
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0)                          
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,PATCH_MINOR_VER,0)                          
                         struct backing_dev_info *dst;
                         blk_queue_max_hw_sectors(sdev->request_queue, BUFFER_SECTOR);
                         /*PATCH für kernel backing_dev_info ist from structure to pointer changed
@@ -79,9 +90,10 @@ int seh_vusb_try_set_buffers(struct usb_device *udev){
 #endif                         
                         dev_info (&sdev->sdev_gendev, "Set max_sectors to %d",BUFFER_SECTOR);
                         dev_info (&sdev->sdev_gendev, "Set read_ahead_kb to %d k", BUFFER_READ_AHEAD);
+                        ret = 0;
                     }
                 }
-                ret = 0;
+                
 
             }else if (!strcmp (ifc->dev.driver->name, "uas")){
                    dev_err (&udev->dev, "SEH UTN do not support \"uas\" driver for storage devices.\n"
@@ -107,19 +119,25 @@ int seh_vusb_boost_storage_devices(void){
     /*get all devices we have*/
     for (hcd_index = 0; hcd_index < VHCI_CONTROLLERS; hcd_index++){
         for (rhport = 0; rhport < VHCI_NPORTS; rhport++){
-            // printk("%s controller[%d] %p port:%d ...\n",__func__,hcd_index,controllers[hcd_index],rhport);
+            //printk("%s controller[%d] %p port:%d ...\n",__func__,hcd_index,controllers[hcd_index],rhport);
             vdev = port_to_vdev(controllers[hcd_index], rhport);
             if (vdev && vdev->device_status == VDEV_ST_USED){
-                if (!vdev->buffersHackBoosted){
+                if (vdev->buffersHackBoosted < 2){ // we try twice, as we do not kwno when hartbeat will hit
                     ret = seh_vusb_try_set_buffers(vdev->udev); 
-                    if (ret == 0)
-                        vdev->buffersHackBoosted = 1;
-                    else if (ret == -EPROTO)
+                    if (ret == 0){
+                        vdev->buffersHackBoosted = 1; // success - no more Trys
+                    }
+                    else if (ret == -EPROTO){
                         unpluging_device(vdev);
+                        vdev->buffersHackBoosted = 1; // no more Trys
+                    }
+                    vdev->buffersHackBoosted++;
+                    
                     return ret;
                     }
-                } else 
-                vdev->buffersHackBoosted = 0;
+                } else{
+                    vdev->buffersHackBoosted = 0;
+                }
         }
     }
     return 0;

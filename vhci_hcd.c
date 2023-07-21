@@ -1085,7 +1085,7 @@ static int vhci_setup(struct usb_hcd *hcd)
     hcd->self.no_stop_on_short = 1;
 #endif    
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
-/*/*/*    hcd->self.uses_dma = 0; */ */ */
+/*/*    hcd->self.uses_dma = 0; */ */
 #endif    
 	if (usb_hcd_is_primary_hcd(hcd)) {
 		/*

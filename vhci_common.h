@@ -39,7 +39,7 @@
 #include <linux/usb.h>
 #include <linux/wait.h>
 
-// $Format: "#define SEH_VHCI_VERSION "3.3.8-$ProjectVersion$\""$
+// $Format: "#define SEH_VHCI_VERSION "3.3.10-$ProjectVersion$\""$
 #define SEH_VHCI_VERSION 
 
 #undef pr_fmt
